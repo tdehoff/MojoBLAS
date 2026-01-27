@@ -8,6 +8,6 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-mojo = "<1.0.0
+mojo = "<1.0.0"
 scipy = ">=1.17.0,<2"
 numpy = ">=2.4.1,<3"

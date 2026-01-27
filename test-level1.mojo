@@ -2,19 +2,80 @@ from testing import assert_equal, TestSuite
 from sys import has_accelerator
 from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
+from layout import Layout, LayoutTensor
 
-from src import iamax_device
+from src import iamax_device, dot_device
 from random import rand, seed
 from math import ceildiv
-from python import Python
+from python import Python, PythonObject
 
 comptime dtype = DType.float32
 comptime size = 51
 comptime TBsize = 512
+comptime in_layout = Layout.row_major(size)
+
+def test_dot():
+    with DeviceContext() as ctx:
+        print("[ dot test ]")
+        out = ctx.enqueue_create_buffer[dtype](1)
+        out.enqueue_fill(0)
+        a_device = ctx.enqueue_create_buffer[dtype](size)
+        a = ctx.enqueue_create_host_buffer[dtype](size)
+        b_device = ctx.enqueue_create_buffer[dtype](size)
+        b = ctx.enqueue_create_host_buffer[dtype](size)
+
+        # Generate two arrays of random numbers on CPU
+        seed()
+        rand[dtype](a.unsafe_ptr(), size)
+        rand[dtype](b.unsafe_ptr(), size)
+
+        ctx.enqueue_copy(a_device, a)
+        ctx.enqueue_copy(b_device, b)
+
+        a_tensor = LayoutTensor[dtype, in_layout, ImmutAnyOrigin](a_device.unsafe_ptr())
+        b_tensor = LayoutTensor[dtype, in_layout, ImmutAnyOrigin](b_device.unsafe_ptr())
+
+        comptime kernel = dot_device[in_layout, size, dtype]
+        ctx.enqueue_function[
+            kernel, kernel
+        ](
+            out,
+            a_tensor,
+            b_tensor,
+            grid_dim=ceildiv(size, TBsize),
+            block_dim=TBsize,
+        )
+
+        ctx.synchronize()
+
+        # Import SciPy and numpy
+        sp = Python.import_module("scipy")
+        np = Python.import_module("numpy")
+        sp_blas = sp.linalg.blas
+
+        # Move a and b to a SciPy-compatible array
+        py_a = Python.list()
+        py_b = Python.list()
+        for i in range(size):
+            py_a.append(a[i])
+            py_b.append(b[i])
+        np_a = np.array(py_a, dtype=np.float32)
+        np_b = np.array(py_b, dtype=np.float32)
+
+        # Run SciPy BLAS routine
+        sp_res = sp_blas.sdot(np_a, np_b)
+
+        sp_res_mojo = Float32(py=sp_res)
+        with out.map_to_host() as res_mojo:
+            print("out:", res_mojo[0])
+            print("expected:", sp_res_mojo)
+            # may want to use assert_almost_equal with tolerance specified
+            assert_equal(res_mojo[0], sp_res_mojo)
+
 
 def test_iamax():
     with DeviceContext() as ctx:
-        print("iamax test")
+        print("[ iamax test ]")
 
         # Allocate GPU and CPU memory
         d_v = ctx.enqueue_create_buffer[dtype](size)

@@ -4,7 +4,8 @@ from gpu import thread_idx, block_dim, block_idx, barrier
 
 # level1.iamax
 # finds the index of the first element having maximum absolute value
-fn iamax_device[BLOCK: Int](n: Int, sx: UnsafePointer[Float32, MutAnyOrigin],
+fn iamax_device[BLOCK: Int](n: Int,
+                            sx: UnsafePointer[Float32, MutAnyOrigin],
                             incx: Int,
                             result: UnsafePointer[Scalar[DType.int64], MutAnyOrigin]):
     # current issues:
