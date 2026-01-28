@@ -4,7 +4,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 
-from src import iamax_device, dot_device
+from src import axpy_device, iamax_device, dot_device
 from random import rand, seed
 from math import ceildiv
 from python import Python, PythonObject
@@ -29,6 +29,7 @@ def generate_random_arr[
     for i in range(size):
         a[i] = min_value + a[i] * rng
 
+comptime atol = 1.0E-6
 
 def dot_test[
     dtype: DType,
@@ -97,7 +98,9 @@ def dot_test[
         with out.map_to_host() as res_mojo:
             print("out:", res_mojo[0])
             print("expected:", sp_res_mojo)
+            # may want to use assert_almost_equal with tolerance specified
             assert_almost_equal(res_mojo[0], sp_res_mojo, atol=atol)
+
 
 def iamax_test[
     dtype: DType,
@@ -156,6 +159,59 @@ def iamax_test[
             print("out:", res_mojo[0])
             print("expected:", sp_res_mojo)
             assert_equal(res_mojo[0], sp_res_mojo)
+
+
+def test_axpy():
+    with DeviceContext() as ctx:
+
+        a: SIMD[dtype, 1] = 0
+        x = ctx.enqueue_create_host_buffer[dtype](size)
+        y = ctx.enqueue_create_host_buffer[dtype](size)
+        mojo_res = ctx.enqueue_create_host_buffer[dtype](size)
+
+        seed()
+        rand[dtype](UnsafePointer[SIMD[dtype, 1]](to=a), 1)
+        rand[dtype](x.unsafe_ptr(), size)
+        rand[dtype](y.unsafe_ptr(), size)
+        print("a = ", a)
+        print("x = ", x)
+        print("y = ", y)
+
+        d_x = ctx.enqueue_create_buffer[dtype](size)
+        d_y = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+        ctx.enqueue_copy(d_y, y)
+
+        axpy_kernel = ctx.compile_function[axpy_device[dtype], axpy_device[dtype]]()
+
+        ctx.enqueue_function(
+            axpy_kernel,
+            size, a, d_x, 1, d_y, 1,
+            grid_dim=1,
+            block_dim=size
+        )
+
+        sp_blas = Python.import_module("scipy.linalg.blas")
+        builtins = Python.import_module("builtins")
+
+        x_py = Python.list()
+        y_py = Python.list()
+        for i in range(size):
+            x_py.append(x[i])
+            y_py.append(y[i])
+        sp_result = sp_blas.saxpy(x_py, y_py, a=a)
+        print(sp_result)
+
+        ctx.enqueue_copy(mojo_res, d_y)
+        ctx.synchronize()
+
+        print("out:", mojo_res)
+        print("expected", sp_result)
+
+        for i in range(size):
+            var f: Float32 = Float32(py=sp_result[i])
+            assert_almost_equal(Float32(py=sp_result[i]), mojo_res[i], atol=1.0E-6)
 
 def test_iamax():
     iamax_test[DType.float32, 256]()
