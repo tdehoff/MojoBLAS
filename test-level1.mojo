@@ -4,7 +4,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 
-from src import axpy_device, iamax_device, dot_device
+from src import axpy_device, scal_device, copy_device, swap_device, dot_device, iamax_device
 from random import rand, seed
 from math import ceildiv
 from python import Python, PythonObject
@@ -28,6 +28,210 @@ def generate_random_arr[
     var rng = max_value - min_value
     for i in range(size):
         a[i] = min_value + a[i] * rng
+
+
+def axpy_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        print("[ axpy test:", dtype, "]")
+
+        a: SIMD[dtype, 1] = 0
+        x = ctx.enqueue_create_host_buffer[dtype](size)
+        y = ctx.enqueue_create_host_buffer[dtype](size)
+        mojo_res = ctx.enqueue_create_host_buffer[dtype](size)
+
+        generate_random_arr[dtype, 1](UnsafePointer[SIMD[dtype, 1]](to=a), -10000, 10000)
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
+        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
+        # print("a = ", a)
+        # print("x = ", x)
+        # print("y = ", y)
+
+        d_x = ctx.enqueue_create_buffer[dtype](size)
+        d_y = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+        ctx.enqueue_copy(d_y, y)
+
+        axpy_kernel = ctx.compile_function[axpy_device[dtype], axpy_device[dtype]]()
+
+        ctx.enqueue_function(
+            axpy_kernel,
+            size, a, d_x, 1, d_y, 1,
+            grid_dim=1,
+            block_dim=size
+        )
+
+        sp_blas = Python.import_module("scipy.linalg.blas")
+        builtins = Python.import_module("builtins")
+
+        x_py = Python.list()
+        y_py = Python.list()
+        for i in range(size):
+            x_py.append(x[i])
+            y_py.append(y[i])
+
+        if dtype == DType.float32:
+            sp_result = sp_blas.saxpy(x_py, y_py, a=a)
+        elif dtype == DType.float64:
+            sp_result = sp_blas.daxpy(x_py, y_py, a=a)
+        else:
+            print(dtype , " is not supported by SciPy")
+            return
+
+        ctx.enqueue_copy(mojo_res, d_y)
+        ctx.synchronize()
+
+        # Prints too much for large vectors. May want to add a verbose option
+        # print("out:", mojo_res)
+        # print("expected", sp_result)
+
+        for i in range(size):
+            assert_almost_equal(Scalar[dtype](py=sp_result[i]), mojo_res[i], atol=atol)
+
+
+def scal_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        print("[ scal test:", dtype, "]")
+
+        a: SIMD[dtype, 1] = 0
+        x = ctx.enqueue_create_host_buffer[dtype](size)
+        mojo_res = ctx.enqueue_create_host_buffer[dtype](size)
+
+        generate_random_arr[dtype, 1](UnsafePointer[SIMD[dtype, 1]](to=a), -10000, 10000)
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
+        # print("a = ", a)
+        # print("x = ", x)
+
+        d_x = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+
+        scal_kernel = ctx.compile_function[scal_device[dtype], scal_device[dtype]]()
+
+        ctx.enqueue_function(
+            scal_kernel,
+            size, a, d_x, 1,
+            grid_dim=1,
+            block_dim=size
+        )
+
+        sp_blas = Python.import_module("scipy.linalg.blas")
+        builtins = Python.import_module("builtins")
+
+        x_py = Python.list()
+        for i in range(size):
+            x_py.append(x[i])
+
+        if dtype == DType.float32:
+            sp_result = sp_blas.sscal(a, x_py)
+        elif dtype == DType.float64:
+            sp_result = sp_blas.dscal(a, x_py)
+        else:
+            print(dtype , " is not supported by SciPy")
+            return
+
+        ctx.enqueue_copy(mojo_res, d_x)
+        ctx.synchronize()
+
+        # Prints too much for large vectors. May want to add a verbose option
+        # print("out:", mojo_res)
+        # print("expected", sp_result)
+
+        for i in range(size):
+            assert_almost_equal(Scalar[dtype](py=sp_result[i]), mojo_res[i], atol=atol)
+
+
+def copy_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        print("[ copy test:", dtype, "]")
+
+        x = ctx.enqueue_create_host_buffer[dtype](size)
+        y = ctx.enqueue_create_host_buffer[dtype](size)
+
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
+        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
+        # print("x = ", x)
+        # print("y = ", y)
+
+        d_x = ctx.enqueue_create_buffer[dtype](size)
+        d_y = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+        ctx.enqueue_copy(d_y, y)
+
+        copy_kernel = ctx.compile_function[copy_device[dtype], copy_device[dtype]]()
+
+        ctx.enqueue_function(
+            copy_kernel,
+            size, d_x, 1, d_y, 1,
+            grid_dim=1,
+            block_dim=size
+        )
+
+        ctx.enqueue_copy(y, d_y)
+        ctx.synchronize()
+
+        # Prints too much for large vectors. May want to add a verbose option
+        # print("out:", mojo_res)
+        # print("expected", sp_result)
+
+        for i in range(size):
+            assert_equal(x[i], y[i])
+
+
+def swap_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        print("[ swap test:", dtype, "]")
+
+        x = ctx.enqueue_create_host_buffer[dtype](size)
+        y = ctx.enqueue_create_host_buffer[dtype](size)
+        x2 = ctx.enqueue_create_host_buffer[dtype](size)
+        y2 = ctx.enqueue_create_host_buffer[dtype](size)
+
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
+        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
+        # print("x = ", x)
+        # print("y = ", y)
+
+        d_x = ctx.enqueue_create_buffer[dtype](size)
+        d_y = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+        ctx.enqueue_copy(d_y, y)
+
+        swap_kernel = ctx.compile_function[swap_device[dtype], swap_device[dtype]]()
+
+        ctx.enqueue_function(
+            swap_kernel,
+            size, d_x, 1, d_y, 1,
+            grid_dim=1,
+            block_dim=size
+        )
+
+        ctx.enqueue_copy(x2, d_x)
+        ctx.enqueue_copy(y2, d_y)
+        ctx.synchronize()
+
+        # Prints too much for large vectors. May want to add a verbose option
+        # print("out:", mojo_res)
+        # print("expected", sp_result)
+
+        for i in range(size):
+            assert_equal(x[i], y2[i])
+            assert_equal(y[i], x2[i])
+
 
 def dot_test[
     dtype: DType,
@@ -89,7 +293,7 @@ def dot_test[
             np_b = np.array(py_b, dtype=np.float64)
             sp_res = sp_blas.ddot(np_a, np_b)
         else:
-            print(dtype , "is not supported by SciPy")
+            print(dtype , " is not supported by SciPy")
             return
 
         sp_res_mojo = Scalar[dtype](py=sp_res)
@@ -148,7 +352,7 @@ def iamax_test[
             np_v = np.array(py_list, dtype=np.float64)
             sp_res = sp_blas.idamax(np_v)
         else:
-            print(dtype , "is not supported by SciPy")
+            print(dtype , " is not supported by SciPy")
             return
 
         # Move Mojo result from CPU to GPU and compare to SciPy
@@ -159,80 +363,36 @@ def iamax_test[
             assert_equal(res_mojo[0], sp_res_mojo)
 
 
-def axpy_test[
-    dtype: DType,
-    size:  Int
-]():
-    with DeviceContext() as ctx:
-        print("[ axpy test:", dtype, "]")
+def test_axpy():
+    axpy_test[DType.float32, 256]()
+    axpy_test[DType.float64, 256]()
 
-        a: SIMD[dtype, 1] = 0
-        x = ctx.enqueue_create_host_buffer[dtype](size)
-        y = ctx.enqueue_create_host_buffer[dtype](size)
-        mojo_res = ctx.enqueue_create_host_buffer[dtype](size)
 
-        generate_random_arr[dtype, 1](UnsafePointer[SIMD[dtype, 1]](to=a), -10000, 10000)
-        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
-        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
-        # print("a = ", a)
-        # print("x = ", x)
-        # print("y = ", y)
+def test_scal():
+    scal_test[DType.float32, 256]()
+    scal_test[DType.float64, 256]()
 
-        d_x = ctx.enqueue_create_buffer[dtype](size)
-        d_y = ctx.enqueue_create_buffer[dtype](size)
 
-        ctx.enqueue_copy(d_x, x)
-        ctx.enqueue_copy(d_y, y)
+def test_copy():
+    copy_test[DType.float32, 256]()
+    copy_test[DType.float64, 256]()
 
-        axpy_kernel = ctx.compile_function[axpy_device[dtype], axpy_device[dtype]]()
 
-        ctx.enqueue_function(
-            axpy_kernel,
-            size, a, d_x, 1, d_y, 1,
-            grid_dim=1,
-            block_dim=size
-        )
+def test_swap():
+    swap_test[DType.float32, 256]()
+    swap_test[DType.float64, 256]()
 
-        sp_blas = Python.import_module("scipy.linalg.blas")
-        builtins = Python.import_module("builtins")
-
-        x_py = Python.list()
-        y_py = Python.list()
-        for i in range(size):
-            x_py.append(x[i])
-            y_py.append(y[i])
-
-        if dtype == DType.float32:
-            sp_result = sp_blas.saxpy(x_py, y_py, a=a)
-        elif dtype == DType.float64:
-            sp_result = sp_blas.daxpy(x_py, y_py, a=a)
-        else:
-            print(dtype , "is not supported by SciPy")
-            return
-
-        ctx.enqueue_copy(mojo_res, d_y)
-        ctx.synchronize()
-
-        # Prints too much for large vectors. May want to add a verbose option
-        # print("out:", mojo_res)
-        # print("expected", sp_result)
-
-        for i in range(size):
-            var f = Scalar[dtype](py=sp_result[i])
-            assert_almost_equal(Scalar[dtype](py=sp_result[i]), mojo_res[i], atol=1.0E-6)
-
-def test_iamax():
-    iamax_test[DType.float32, 256]()
-    iamax_test[DType.float64, 256]()
 
 def test_dot():
     dot_test[DType.float32, 256]()
     # It looks like warp_sum doesn't support float64
     # dot_test[DType.float64, 256]()
 
-def test_axpy():
-    axpy_test[DType.float32, 256]()
-    axpy_test[DType.float64, 256]()
+
+def test_iamax():
+    iamax_test[DType.float32, 256]()
+    iamax_test[DType.float64, 256]()
+
 
 def main():
     print("--- MojoBLAS Level 1 routines testing ---")
