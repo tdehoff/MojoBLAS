@@ -1,18 +1,16 @@
 from gpu import grid_dim, block_dim, global_idx
 
-fn axpy_device[dtype: DType](
+fn scal_device[dtype: DType](
     n: Int, 
     a: Scalar[dtype],
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     incx: Int,
-    y: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    incy: Int
 ):
     if (n <= 0):
         return
     if (a == 0):
         return
-    if (incx == 0 or incy == 0):
+    if (incx == 0):
         return
 
     var global_i = global_idx.x
@@ -21,10 +19,10 @@ fn axpy_device[dtype: DType](
     if (n <= n_threads):
         # Standard case: each thread gets 1 cell
         if (global_i < n):
-            y[global_i*incy] += a * x[global_i*incx]
+            x[global_i*incx] *= a
     
     else:
         # Multiple cells per thread
         for i in range(global_i, n, n_threads):
-            y[i*incy] += a * x[i*incx]
+            x[i*incx] *= a
 
