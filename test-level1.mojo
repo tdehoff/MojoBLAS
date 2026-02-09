@@ -60,8 +60,8 @@ def axpy_test[
         ctx.enqueue_function(
             axpy_kernel,
             size, a, d_x, 1, d_y, 1,
-            grid_dim=1,
-            block_dim=size
+            grid_dim=ceildiv(size, TBsize),
+            block_dim=TBsize,
         )
 
         sp_blas = Python.import_module("scipy.linalg.blas")
@@ -117,8 +117,8 @@ def scal_test[
         ctx.enqueue_function(
             scal_kernel,
             size, a, d_x, 1,
-            grid_dim=1,
-            block_dim=size
+            grid_dim=ceildiv(size, TBsize),
+            block_dim=TBsize,
         )
 
         sp_blas = Python.import_module("scipy.linalg.blas")
@@ -173,8 +173,8 @@ def copy_test[
         ctx.enqueue_function(
             copy_kernel,
             size, d_x, 1, d_y, 1,
-            grid_dim=1,
-            block_dim=size
+            grid_dim=ceildiv(size, TBsize),
+            block_dim=TBsize,
         )
 
         ctx.enqueue_copy(y, d_y)
@@ -216,8 +216,8 @@ def swap_test[
         ctx.enqueue_function(
             swap_kernel,
             size, d_x, 1, d_y, 1,
-            grid_dim=1,
-            block_dim=size
+            grid_dim=ceildiv(size, TBsize),
+            block_dim=TBsize,
         )
 
         ctx.enqueue_copy(x2, d_x)
@@ -365,33 +365,44 @@ def iamax_test[
 
 def test_axpy():
     axpy_test[DType.float32, 256]()
+    axpy_test[DType.float32, 4096]()
     axpy_test[DType.float64, 256]()
+    axpy_test[DType.float64, 4096]()
 
 
 def test_scal():
     scal_test[DType.float32, 256]()
+    scal_test[DType.float32, 4096]()
     scal_test[DType.float64, 256]()
+    scal_test[DType.float64, 4096]()
 
 
 def test_copy():
     copy_test[DType.float32, 256]()
+    copy_test[DType.float32, 4096]()
     copy_test[DType.float64, 256]()
+    copy_test[DType.float64, 4096]()
 
 
 def test_swap():
     swap_test[DType.float32, 256]()
+    swap_test[DType.float32, 4096]()
     swap_test[DType.float64, 256]()
+    swap_test[DType.float64, 4096]()
 
 
 def test_dot():
     dot_test[DType.float32, 256]()
+    dot_test[DType.float32, 4096]()
     # It looks like warp_sum doesn't support float64
     # dot_test[DType.float64, 256]()
 
 
 def test_iamax():
     iamax_test[DType.float32, 256]()
+    # iamax_test[DType.float32, 4096]()
     iamax_test[DType.float64, 256]()
+    # iamax_test[DType.float64, 4096]()
 
 
 def main():
