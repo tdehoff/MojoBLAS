@@ -1,6 +1,7 @@
 from memory import stack_allocation
 from gpu.memory import AddressSpace
 from gpu import thread_idx, block_dim, block_idx, barrier
+from os.atomic import Atomic
 
 # level1.iamax
 # finds the index of the first element having maximum absolute value
@@ -33,23 +34,28 @@ fn iamax_device[
         address_space = AddressSpace.SHARED
     ]()
 
-    local_tid = thread_idx.x
+    var local_tid = thread_idx.x
+    var global_tid = block_idx.x * block_dim.x + thread_idx.x
+    var n_threads = grid_dim.x * block_dim.x
 
-    # Handle incx: each thread processes elements at intervals of incx
-    var thread_global_idx = Int(local_tid * incx)
+    # Each thread finds its local max
+    var local_max_id = -1
+    var local_max_val = Scalar[dtype](-1)
 
-    # Initialize shared memory with index and absolute value
-    if thread_global_idx < n:
-        shared_indices[local_tid] = thread_global_idx
-        shared_values[local_tid] = abs(sx[thread_global_idx])
-    else:
-        # Initialize out-of-bounds threads with minimum values
-        shared_indices[local_tid] = -1
-        shared_values[local_tid] = Scalar[dtype](0)
+    for i in range(global_tid, n, n_threads):
+        var idx = i * incx
+        var val = abs(sx[idx])
+
+        if val > local_max_val:
+            local_max_val = val
+            local_max_id = i
+
+    shared_indices[local_tid] = local_max_id
+    shared_values[local_tid] = local_max_val
 
     barrier()
 
-    # Parallel reduction to find maximum absolute value
+    # Parallel reduction to find max within the block
     var stride = block_dim.x // 2
     while stride > 0:
         if local_tid < stride:
@@ -66,6 +72,7 @@ fn iamax_device[
         barrier()
         stride //= 2
 
-    # Thread 0 writes the final result
+    # Thread 0 atomically updates the global result
+    # TODO: complete this
     if local_tid == 0:
         result[0] = shared_indices[0]

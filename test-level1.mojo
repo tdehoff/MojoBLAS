@@ -4,7 +4,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 
-from src import axpy_device, scal_device, copy_device, swap_device, dot_device, iamax_device
+from src import axpy_device, scal_device, copy_device, swap_device, dot_device, iamax_device, asum_device
 from random import rand, seed
 from math import ceildiv
 from python import Python, PythonObject
@@ -28,6 +28,56 @@ def generate_random_arr[
     var rng = max_value - min_value
     for i in range(size):
         a[i] = min_value + a[i] * rng
+
+
+def asum_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        print("[ asum test:", dtype, "]")
+
+        d_v = ctx.enqueue_create_buffer[dtype](size)
+        v = ctx.enqueue_create_host_buffer[dtype](size)
+        generate_random_arr[dtype, size](v.unsafe_ptr(), -10000, 10000)
+        ctx.enqueue_copy(d_v, v)
+
+        d_res = ctx.enqueue_create_buffer[dtype](1)
+        d_res.enqueue_fill(Scalar[dtype](-1))
+
+        # Launch Mojo GPU kernel
+        comptime kernel = asum_device[TBsize, dtype]
+        ctx.enqueue_function[kernel, kernel](
+            size, d_v,
+            1, d_res,
+            grid_dim=ceildiv(size, TBsize),     # total thread blocks
+            block_dim=TBsize                    # threads per block
+        )
+
+        # Import SciPy and numpy
+        sp = Python.import_module("scipy")
+        np = Python.import_module("numpy")
+        sp_blas = sp.linalg.blas
+
+        # Move values in v to a SciPy-compatible array and run SciPy BLAS routine
+        py_list = Python.list()
+        for i in range(size):
+            py_list.append(v[i])
+        var sp_res: PythonObject
+        # sasum - float32, dasum - float64
+        if dtype == DType.float32:
+            np_v = np.array(py_list, dtype=np.float32)
+            sp_res = sp_blas.sasum(np_v)
+        elif dtype == DType.float64:
+            np_v = np.array(py_list, dtype=np.float64)
+            sp_res = sp_blas.dasum(np_v)
+        else:
+            print(dtype , " is not supported by SciPy")
+            return
+
+        sp_res_mojo = Scalar[dtype](py=sp_res)
+        with d_res.map_to_host() as res_mojo:
+            assert_almost_equal(sp_res_mojo, res_mojo[0], atol=atol)
 
 
 def axpy_test[
@@ -299,7 +349,7 @@ def dot_test[
         sp_res_mojo = Scalar[dtype](py=sp_res)
         with out.map_to_host() as res_mojo:
             print("out:", res_mojo[0])
-            print("expected:", sp_res_mojo)
+            print("expected:", sp_res)
             # may want to use assert_almost_equal with tolerance specified
             assert_almost_equal(res_mojo[0], sp_res_mojo, atol=atol)
 
@@ -359,9 +409,15 @@ def iamax_test[
         sp_res_mojo = Int(py=sp_res)             # cast Python int into Mojo int
         with d_res.map_to_host() as res_mojo:
             print("out:", res_mojo[0])
-            print("expected:", sp_res_mojo)
+            print("expected:", sp_res)
             assert_equal(res_mojo[0], sp_res_mojo)
 
+
+def test_asum():
+    asum_test[DType.float32, 256]()
+    asum_test[DType.float32, 4096]()
+    asum_test[DType.float64, 256]()
+    asum_test[DType.float64, 4096]()
 
 def test_axpy():
     axpy_test[DType.float32, 256]()
@@ -369,13 +425,11 @@ def test_axpy():
     axpy_test[DType.float64, 256]()
     axpy_test[DType.float64, 4096]()
 
-
 def test_scal():
     scal_test[DType.float32, 256]()
     scal_test[DType.float32, 4096]()
     scal_test[DType.float64, 256]()
     scal_test[DType.float64, 4096]()
-
 
 def test_copy():
     copy_test[DType.float32, 256]()
@@ -383,20 +437,17 @@ def test_copy():
     copy_test[DType.float64, 256]()
     copy_test[DType.float64, 4096]()
 
-
 def test_swap():
     swap_test[DType.float32, 256]()
     swap_test[DType.float32, 4096]()
     swap_test[DType.float64, 256]()
     swap_test[DType.float64, 4096]()
 
-
 def test_dot():
     dot_test[DType.float32, 256]()
     dot_test[DType.float32, 4096]()
     # It looks like warp_sum doesn't support float64
     # dot_test[DType.float64, 256]()
-
 
 def test_iamax():
     iamax_test[DType.float32, 256]()
