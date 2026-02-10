@@ -39,15 +39,16 @@ NVIDIA and AMD hardware, and matches performance in current C++ BLAS libraries.
 ### Usage ###
 
 1. Run the Mojo code through Pixi.
-- On Linux based systems, run test with:
-    ```
-    pixi run mojo test-level1.mojo
-    ```
 - For MacOS, first run:
     ```
     pixi workspace platform add osx-arm64
     ```
-- This will add a pixi.lock file supported osx-arm64 machines.
+    - This will add a pixi.lock file for supported osx-arm64 machines.
+    - Then, follow the instructions for Linux-based systems.
+- On Linux based systems, run test with:
+    ```
+    pixi run mojo test-level1.mojo
+    ```
 
 ### Contact Information ###
 
