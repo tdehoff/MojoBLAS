@@ -1,3 +1,4 @@
+from .level1.asum_device import *
 from .level1.axpy_device import *
 from .level1.scal_device import *
 from .level1.copy_device import *

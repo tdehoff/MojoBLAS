@@ -1,3 +1,4 @@
+from .asum_device import *
 from .axpy_device import *
 from .scal_device import *
 from .copy_device import *
