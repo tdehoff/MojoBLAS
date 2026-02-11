@@ -12,18 +12,6 @@ NVIDIA and AMD hardware, and matches performance in current C++ BLAS libraries.
 
 ## Installation Instructions ##
 
-### ICL Cluster Users ###
-Developers, this is you!
-
-We recommend using VSCode with the Remote-SSH extension. If you have not set this up already, instructions can be found [here](https://code.visualstudio.com/docs/remote/ssh).
-
-1. Remote into the ICL machine:
-    ```
-    ssh <netid>@login.icl.utk.edu
-    ```
-2. Login (if prompted)
-3. Follow installation rules for 'Machines with NVIDIA / AMD GPUs'.
-
 ### Machines with NVIDIA / AMD GPUs ###
 
 1. Set up your Pixi coding environment.
