@@ -318,8 +318,8 @@ def nrm2_test[
         sp_res_mojo = Scalar[dtype](py=sp_res)
         with d_res.map_to_host() as res_mojo:
             res_mojo[0] = sqrt(res_mojo[0])
-            print("out:", res_mojo[0])
-            print("expected:", sp_res)
+            # print("out:", res_mojo[0])
+            # print("expected:", sp_res)
             assert_almost_equal(res_mojo[0], sp_res_mojo)
 
 
