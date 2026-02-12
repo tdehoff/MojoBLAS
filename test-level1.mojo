@@ -31,6 +31,21 @@ def generate_random_arr[
         a[i] = min_value + a[i] * rng
 
 
+def generate_random_scalar[
+    dtype: DType,
+](
+    min_value: Scalar[dtype],
+    max_value: Scalar[dtype]
+) -> Scalar[dtype]:
+    # Generate random values in [0, 1]
+    seed()
+    var result = Scalar[dtype]()
+    rand[dtype](UnsafePointer(to=result), 1)
+
+    range = max_value - min_value
+    return min_value + result * range
+
+
 def asum_test[
     dtype: DType,
     size:  Int
@@ -393,69 +408,43 @@ def rot_test[
 
 def rotg_test[
     dtype: DType,
-    size:  Int
 ]():
-    with DeviceContext() as ctx:
-        d_x = ctx.enqueue_create_buffer[dtype](size)
-        x = ctx.enqueue_create_host_buffer[dtype](size)
-        d_y = ctx.enqueue_create_buffer[dtype](size)
-        y = ctx.enqueue_create_host_buffer[dtype](size)
+    var a = generate_random_scalar[dtype](-10000, 10000)
+    var b = generate_random_scalar[dtype](-10000, 10000)
+    var c = Scalar[dtype](0)
+    var s = Scalar[dtype](0)
 
-        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
-        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
+    # Import SciPy and numpy
+    sp = Python.import_module("scipy")
+    np = Python.import_module("numpy")
+    sp_blas = sp.linalg.blas
 
-        ctx.enqueue_copy(d_x, x)
-        ctx.enqueue_copy(d_y, y)
+    # srotg - float32, drotg - float64
+    if dtype == DType.float32:
+        var res = sp_blas.srotg(a, b)
+        # rotg returns updated cos and sin in a single variable
+        np_c = res[0]
+        np_s = res[1]
+    elif dtype == DType.float64:
+        var res = sp_blas.drotg(a, b)
+        np_c = res[0]
+        np_s = res[1]
+    else:
+        print(dtype , " is not supported by SciPy")
+        return
 
-        d_c = ctx.enqueue_create_buffer[dtype](1)
-        d_s = ctx.enqueue_create_buffer[dtype](1)
+    # Needs to be done after the python code as the Mojo
+    # version modifies a/b
+    blas_rotg[dtype](
+        UnsafePointer(to=a),
+        UnsafePointer(to=b),
+        UnsafePointer(to=c),
+        UnsafePointer(to=s)
+    )
 
-        # TODO: implement this
-        d_c.enqueue_fill(-1)    # remove when done
-        d_s.enqueue_fill(-1)
-        # blas_rotg[dtype](
-        #     d_x.unsafe_ptr(),
-        #     d_y.unsafe_ptr(),
-        #     d_c.unsafe_ptr(),
-        #     d_s.unsafe_ptr(),
-        #     ctx
-        # )
-
-        # Import SciPy and numpy
-        sp = Python.import_module("scipy")
-        np = Python.import_module("numpy")
-        sp_blas = sp.linalg.blas
-
-        py_x = Python.list()
-        py_y = Python.list()
-
-        for i in range(size):
-            py_x.append(x[i])
-            py_y.append(y[i])
-
-        # srotg - float32, drotg - float64
-        if dtype == DType.float32:
-            np_x = np.array(py_x, dtype=np.float32)
-            np_y = np.array(py_y, dtype=np.float32)
-            var res = sp_blas.srotg(np_x, np_y)
-            # rotg returns updated cos and sin in a single variable
-            np_c = res[0]
-            np_s = res[1]
-        elif dtype == DType.float64:
-            np_x = np.array(py_x, dtype=np.float64)
-            np_y = np.array(py_y, dtype=np.float64)
-            var res = sp_blas.drotg(np_x, np_y)
-            np_c = res[0]
-            np_s = res[1]
-        else:
-            print(dtype , " is not supported by SciPy")
-            return
-
-        with d_c.map_to_host() as c_result:
-            with d_s.map_to_host() as s_result:
-                # Check cos & sin
-                assert_equal(c_result[0], Scalar[dtype](py=np_c))
-                assert_equal(s_result[0], Scalar[dtype](py=np_s))
+    # Check cos & sin
+    assert_almost_equal(c, Scalar[dtype](py=np_c))
+    assert_almost_equal(s, Scalar[dtype](py=np_s))
 
 
 def scal_test[
@@ -581,10 +570,10 @@ def test_rot():
     rot_test[DType.float64, 4096]()
 
 def test_rotg():
-    rotg_test[DType.float32, 256]()
-    rotg_test[DType.float32, 4096]()
-    rotg_test[DType.float64, 256]()
-    rotg_test[DType.float64, 4096]()
+    rotg_test[DType.float32]()
+    rotg_test[DType.float32]()
+    rotg_test[DType.float64]()
+    rotg_test[DType.float64]()
 
 def test_scal():
     scal_test[DType.float32, 256]()
