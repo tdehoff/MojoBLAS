@@ -5,5 +5,6 @@ from .level1.copy_device import *
 from .level1.rot_device import *
 from .level1.swap_device import *
 from .level1.dot_device import *
+from .level1.dotc_device import *
 from .level1.nrm2_device import *
 from .level1.iamax_device import *
