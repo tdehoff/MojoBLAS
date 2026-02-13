@@ -287,6 +287,68 @@ def dotc_test[
             assert_almost_equal(res_mojo[0], sp_res_mojo_real, atol=atol)
             assert_almost_equal(res_mojo[1], sp_res_mojo_imag, atol=atol)
 
+def dotu_test[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        # print("[ dotu test", dtype, "]")
+        out = ctx.enqueue_create_buffer[dtype](2)
+        out.enqueue_fill(0)
+        a_device = ctx.enqueue_create_buffer[dtype](size*2)
+        a = ctx.enqueue_create_host_buffer[dtype](size*2)
+        b_device = ctx.enqueue_create_buffer[dtype](size*2)
+        b = ctx.enqueue_create_host_buffer[dtype](size*2)
+
+        # Generate two arrays of random numbers on CPU
+        generate_random_arr[dtype, size*2](a.unsafe_ptr(), -1, 1)
+        generate_random_arr[dtype, size*2](b.unsafe_ptr(), -1, 1)
+
+        ctx.enqueue_copy(a_device, a)
+        ctx.enqueue_copy(b_device, b)
+
+        blas_dotu[dtype](
+            size,
+            a_device.unsafe_ptr(), 1,
+            b_device.unsafe_ptr(), 1,
+            out.unsafe_ptr(),
+            ctx)
+
+        # Import SciPy and numpy
+        sp = Python.import_module("scipy")
+        np = Python.import_module("numpy")
+        sp_blas = sp.linalg.blas
+
+        # Move a and b to a SciPy-compatible array and run SciPy BLAS routine
+        py_a = Python.list()
+        py_b = Python.list()
+        for i in range(size):
+            py_a.append(np.complex64(a[i*2], a[i*2+1]))
+            py_b.append(np.complex64(b[i*2], b[i*2+1]))
+
+        var sp_res: PythonObject
+        # Scipy only supports one precision - cdotu
+        if dtype == DType.float32:
+            np_a = np.array(py_a, dtype=np.complex64)
+            np_b = np.array(py_b, dtype=np.complex64)
+            sp_res = sp_blas.cdotu(np_a, np_b)
+        elif dtype == DType.float64:
+            np_a = np.array(py_a, dtype=np.complex64)
+            np_b = np.array(py_b, dtype=np.complex64)
+            sp_res = sp_blas.cdotu(np_a, np_b)
+        else:
+            print(dtype , " is not supported by SciPy")
+            return
+
+        sp_res_mojo_real = Scalar[dtype](py=sp_res.real)
+        sp_res_mojo_imag = Scalar[dtype](py=sp_res.imag)
+        with out.map_to_host() as res_mojo:
+            # print("out:", res_mojo[0])
+            # print("expected:", sp_res)
+            # may want to use assert_almost_equal with tolerance specified
+            assert_almost_equal(res_mojo[0], sp_res_mojo_real, atol=atol)
+            assert_almost_equal(res_mojo[1], sp_res_mojo_imag, atol=atol)
+
 
 def iamax_test[
     dtype: DType,
@@ -627,6 +689,12 @@ def test_dot():
     dot_test[DType.float64, 4096]()
 
 def test_dotc():
+    dotc_test[DType.float32, 256]()
+    dotc_test[DType.float32, 4096]()
+    dotc_test[DType.float64, 256]()
+    dotc_test[DType.float64, 4096]()
+
+def test_dotu():
     dotc_test[DType.float32, 256]()
     dotc_test[DType.float32, 4096]()
     dotc_test[DType.float64, 256]()
