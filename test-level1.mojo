@@ -4,7 +4,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from math import sqrt
-from complex import ComplexSIMD
+from complex import *
 
 from src import *
 from random import rand, seed, random_float64
@@ -181,6 +181,66 @@ def dot_test[
         # Generate two arrays of random numbers on CPU
         generate_random_arr[dtype, size](a.unsafe_ptr(), -100, 100)
         generate_random_arr[dtype, size](b.unsafe_ptr(), -100, 100)
+
+        ctx.enqueue_copy(a_device, a)
+        ctx.enqueue_copy(b_device, b)
+
+        blas_dot[dtype](
+            size,
+            a_device.unsafe_ptr(), 1,
+            b_device.unsafe_ptr(), 1,
+            out.unsafe_ptr(),
+            ctx)
+
+        # Import SciPy and numpy
+        sp = Python.import_module("scipy")
+        np = Python.import_module("numpy")
+        sp_blas = sp.linalg.blas
+
+        # Move a and b to a SciPy-compatible array and run SciPy BLAS routine
+        py_a = Python.list()
+        py_b = Python.list()
+        for i in range(size):
+            py_a.append(a[i])
+            py_b.append(b[i])
+        var sp_res: PythonObject
+        # sdot - float32, ddot - float64
+        if dtype == DType.float32:
+            np_a = np.array(py_a, dtype=np.float32)
+            np_b = np.array(py_b, dtype=np.float32)
+            sp_res = sp_blas.sdot(np_a, np_b)
+        elif dtype == DType.float64:
+            np_a = np.array(py_a, dtype=np.float64)
+            np_b = np.array(py_b, dtype=np.float64)
+            sp_res = sp_blas.ddot(np_a, np_b)
+        else:
+            print(dtype , " is not supported by SciPy")
+            return
+
+        sp_res_mojo = Scalar[dtype](py=sp_res)
+        with out.map_to_host() as res_mojo:
+            # print("out:", res_mojo[0])
+            # print("expected:", sp_res)
+            # may want to use assert_almost_equal with tolerance specified
+            assert_almost_equal(res_mojo[0], sp_res_mojo, atol=atol)
+
+
+def dot_test_complex[
+    dtype: DType,
+    size:  Int
+]():
+    with DeviceContext() as ctx:
+        # print("[ dot test", dtype, "]")
+        out = ctx.enqueue_create_buffer[dtype](2)
+        out.enqueue_fill(0)
+        a_device = ctx.enqueue_create_buffer[dtype](2*size)
+        a = ctx.enqueue_create_host_buffer[dtype](2*size)
+        b_device = ctx.enqueue_create_buffer[dtype](2*size)
+        b = ctx.enqueue_create_host_buffer[dtype](2*size)
+
+        # Generate two arrays of random numbers on CPU
+        generate_random_arr[dtype, 2*size](a.unsafe_ptr(), -100, 100)
+        generate_random_arr[dtype, 2*size](b.unsafe_ptr(), -100, 100)
 
         ctx.enqueue_copy(a_device, a)
         ctx.enqueue_copy(b_device, b)
@@ -687,6 +747,10 @@ def test_dot():
     dot_test[DType.float32, 4096]()
     dot_test[DType.float64, 256]()
     dot_test[DType.float64, 4096]()
+    dot_test_complex[DType.float32, 256]()
+    dot_test_complex[DType.float32, 4096]()
+    dot_test_complex[DType.float64, 256]()
+    dot_test_complex[DType.float64, 4096]()
 
 def test_dotc():
     dotc_test[DType.float32, 256]()
