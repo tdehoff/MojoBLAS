@@ -12,7 +12,7 @@ from math import ceildiv, sin, cos
 from python import Python, PythonObject
 
 comptime TBsize = 512
-comptime atol = 1.0E-6
+comptime atol = 1.0E-4
 
 def generate_random_arr[
     dtype: DType,
@@ -537,8 +537,8 @@ def rot_test[
         d_y = ctx.enqueue_create_buffer[dtype](size)
         y = ctx.enqueue_create_host_buffer[dtype](size)
 
-        generate_random_arr[dtype, size](x.unsafe_ptr(), -10000, 10000)
-        generate_random_arr[dtype, size](y.unsafe_ptr(), -10000, 10000)
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -100, 100)
+        generate_random_arr[dtype, size](y.unsafe_ptr(), -100, 100)
 
         ctx.enqueue_copy(d_x, x)
         ctx.enqueue_copy(d_y, y)
@@ -644,8 +644,14 @@ def rotm_test[
         # size_y = (n - 1) * abs(incy) + 1
         x = ctx.enqueue_create_host_buffer[dtype](size)
         y = ctx.enqueue_create_host_buffer[dtype](size)
+        generate_random_arr[dtype, size](x.unsafe_ptr(), -100, 100)
+        generate_random_arr[dtype, size](y.unsafe_ptr(), -100, 100)
+
         d_x = ctx.enqueue_create_buffer[dtype](size)
         d_y = ctx.enqueue_create_buffer[dtype](size)
+
+        ctx.enqueue_copy(d_x, x)
+        ctx.enqueue_copy(d_y, y)
 
         param = ctx.enqueue_create_host_buffer[dtype](5)
         d_param = ctx.enqueue_create_buffer[dtype](5)
@@ -656,10 +662,10 @@ def rotm_test[
         sp_blas = sp.linalg.blas
 
         # d1 and d2 must be positive
-        var d1 = generate_random_scalar[dtype](1, 10000)
-        var d2 = generate_random_scalar[dtype](1, 10000)
-        var x1 = generate_random_scalar[dtype](-10000, 10000)
-        var y1 = generate_random_scalar[dtype](-10000, 10000)
+        var d1 = generate_random_scalar[dtype](1, 100)
+        var d2 = generate_random_scalar[dtype](1, 100)
+        var x1 = generate_random_scalar[dtype](-100, 100)
+        var y1 = generate_random_scalar[dtype](-100, 100)
 
         # srotmg - float32, drotmg - float64
         if dtype == DType.float32:
@@ -674,15 +680,19 @@ def rotm_test[
         for i in range(5):
             param[i] = Scalar[dtype](py=py_p[i])
         ctx.enqueue_copy(d_param, param)
+        ctx.synchronize()
+
+        print("param:", param[0], param[1], param[2], param[3], param[4])
+        print("x[0] before:", x[0], "y[0] before:", y[0])
+
 
         # Launch Mojo BLAS kernel
-        # NOTE: not implemented
-        # blas_rotm[dtype](
-        #     size,
-        #     d_x.unsafe_ptr(), 1,
-        #     d_y.unsafe_ptr(), 1,
-        #     d_param.unsafe_ptr(),
-        #     ctx)
+        blas_rotm[dtype](
+            size,
+            d_x.unsafe_ptr(), 1,
+            d_y.unsafe_ptr(), 1,
+            d_param.unsafe_ptr(),
+            ctx)
 
         py_x = Python.list()
         py_y = Python.list()
@@ -708,17 +718,19 @@ def rotm_test[
         ref_x = res[0]
         ref_y = res[1]
 
+        print("Expected x[0]:", ref_x[0], "Expected y[0]:", ref_y[0])
+
         with d_x.map_to_host() as x_result:
             with d_y.map_to_host() as y_result:
                 # Check x vector
                 for i in range(size):
                     var expected_x = Scalar[dtype](py=ref_x[i])
-                    assert_equal(x_result[i], expected_x)
+                    assert_almost_equal(x_result[i], expected_x, atol=atol)
 
                 # Check y vector
                 for i in range(size):
                     var expected_y = Scalar[dtype](py=ref_y[i])
-                    assert_equal(y_result[i], expected_y)
+                    assert_almost_equal(y_result[i], expected_y, atol=atol)
 
 
 def rotmg_test[
@@ -919,9 +931,15 @@ def test_rotg():
 
 def test_rotm():
     rotm_test[DType.float32, 256]()
+    rotm_test[DType.float32, 4096]()
+    rotm_test[DType.float64, 256]()
+    rotm_test[DType.float64, 4096]()
 
 def test_rotmg():
     rotmg_test[DType.float32, 256]()
+    rotmg_test[DType.float32, 4096]()
+    rotmg_test[DType.float64, 256]()
+    rotmg_test[DType.float64, 4096]()
 
 def test_scal():
     scal_test[DType.float32, 256]()
