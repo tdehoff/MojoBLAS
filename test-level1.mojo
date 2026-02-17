@@ -682,10 +682,6 @@ def rotm_test[
         ctx.enqueue_copy(d_param, param)
         ctx.synchronize()
 
-        print("param:", param[0], param[1], param[2], param[3], param[4])
-        print("x[0] before:", x[0], "y[0] before:", y[0])
-
-
         # Launch Mojo BLAS kernel
         blas_rotm[dtype](
             size,
@@ -717,8 +713,6 @@ def rotm_test[
 
         ref_x = res[0]
         ref_y = res[1]
-
-        print("Expected x[0]:", ref_x[0], "Expected y[0]:", ref_y[0])
 
         with d_x.map_to_host() as x_result:
             with d_y.map_to_host() as y_result:
