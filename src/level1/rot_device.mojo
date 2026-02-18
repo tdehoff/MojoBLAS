@@ -7,7 +7,6 @@ comptime TBsize = 512
 # level1.rot
 # applies a plane rotation to vectors x and y
 fn rot_device[
-    BLOCK: Int,
     dtype: DType
 ](
     n: Int,
@@ -44,7 +43,7 @@ fn blas_rot[dtype: DType](
     s: Scalar[dtype],
     ctx: DeviceContext
 ) raises:
-    comptime kernel = rot_device[TBsize, dtype]
+    comptime kernel = rot_device[dtype]
     ctx.enqueue_function[kernel, kernel](
         n,
         d_x, incx,
@@ -57,7 +56,6 @@ fn blas_rot[dtype: DType](
 
 
 fn rot_device_complex[
-    BLOCK: Int,
     dtype: DType
 ](
     n: Int,
@@ -94,7 +92,7 @@ fn blas_rot_complex[dtype: DType](
     s: ComplexScalar[dtype],
     ctx: DeviceContext
 ) raises:
-    comptime kernel = rot_device[TBsize, dtype]
+    comptime kernel = rot_device[dtype]
     ctx.enqueue_function[kernel, kernel](
         n,
         d_x, incx,

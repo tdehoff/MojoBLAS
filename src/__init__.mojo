@@ -4,6 +4,7 @@ from .level1.scal_device import *
 from .level1.copy_device import *
 from .level1.rot_device import *
 from .level1.rotg import *
+from .level1.rotm_device import *
 from .level1.swap_device import *
 from .level1.dot_device import *
 from .level1.dotc_device import *
