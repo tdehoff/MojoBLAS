@@ -4,7 +4,6 @@ from gpu.host import DeviceContext
 from gpu import block_dim, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from math import sqrt
-from complex import ComplexSIMD
 
 from src import *
 from random import rand, seed, randn_float64
@@ -13,23 +12,6 @@ from python import Python, PythonObject
 
 comptime TBsize = 512
 comptime atol = 1.0E-5
-
-def generate_random_arr[
-    dtype: DType,
-    size:  Int
-](
-    a:   UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    min_value: Scalar[dtype],
-    max_value: Scalar[dtype]
-):
-    # Generate random values in [0, 1]
-    seed()
-    rand[dtype](a, size)
-
-    # Scale to [min, max]
-    var rng = max_value - min_value
-    for i in range(size):
-        a[i] = min_value + a[i] * rng
 
 
 def sger_test[
@@ -44,7 +26,7 @@ def sger_test[
         y_device = ctx.enqueue_create_buffer[DType.float32](n)
         y = ctx.enqueue_create_host_buffer[DType.float32](n)
 
-        # Generate two arrays of random numbers on CPU
+        # Generate three arrays of random numbers on CPU
         generate_random_arr[DType.float32, m*n](A.unsafe_ptr(), -100, 100)
         generate_random_arr[DType.float32, m](x.unsafe_ptr(), -100, 100)
         generate_random_arr[DType.float32, n](y.unsafe_ptr(), -100, 100)
@@ -105,7 +87,7 @@ def dger_test[
         y_device = ctx.enqueue_create_buffer[DType.float64](n)
         y = ctx.enqueue_create_host_buffer[DType.float64](n)
 
-        # Generate two arrays of random numbers on CPU
+        # Generate three arrays of random numbers on CPU
         generate_random_arr[DType.float64, m*n](A.unsafe_ptr(), -100, 100)
         generate_random_arr[DType.float64, m](x.unsafe_ptr(), -100, 100)
         generate_random_arr[DType.float64, n](y.unsafe_ptr(), -100, 100)
