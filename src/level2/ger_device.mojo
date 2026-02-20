@@ -4,8 +4,8 @@ from math import ceildiv
 
 comptime TBsize = 512
 
-# level2.sger
-# Computes single-precision rank-1 update of given matrix: A := A + αxy'
+# level2.ger
+# Computes rank-1 update of given matrix: A := A + αxy'
 fn sger_device[
     BLOCK: Int,
 ](
@@ -36,38 +36,6 @@ fn sger_device[
 
         A[row * lda + col] += alpha * x_val * y_val
 
-fn blas_sger(
-    m: Int,
-    n: Int,
-    alpha: Scalar[DType.float32],
-    d_x: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    incx: Int,
-    d_y: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    incy: Int,
-    d_A: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    lda: Int,
-    ctx: DeviceContext
-) raises:
-    if m < 1 or n < 1:
-        return
-    
-    comptime kernel = sger_device[TBsize]
-
-    var total = m * n
-
-    ctx.enqueue_function[kernel, kernel](
-        m, n, alpha,
-        d_x, incx,
-        d_y, incy,
-        d_A, lda,
-        grid_dim=ceildiv(total, TBsize),
-        block_dim=TBsize,
-    )
-
-    ctx.synchronize()
-
-# level2.dger
-# Computes double-precision rank-1 update of given matrix: A := A + αxy'
 fn dger_device[
     BLOCK: Int,
 ](
@@ -98,32 +66,42 @@ fn dger_device[
 
         A[row * lda + col] += alpha * x_val * y_val
 
-fn blas_dger(
+fn blas_ger[dtype: DType](
     m: Int,
     n: Int,
-    alpha: Scalar[DType.float64],
-    d_x: UnsafePointer[Scalar[DType.float64], ImmutAnyOrigin],
+    alpha: Scalar[dtype],
+    d_x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     incx: Int,
-    d_y: UnsafePointer[Scalar[DType.float64], ImmutAnyOrigin],
+    d_y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     incy: Int,
-    d_A: UnsafePointer[Scalar[DType.float64], MutAnyOrigin],
+    d_A: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     lda: Int,
     ctx: DeviceContext
 ) raises:
     if m < 1 or n < 1:
         return
     
-    comptime kernel = dger_device[TBsize]
-
     var total = m * n
 
-    ctx.enqueue_function[kernel, kernel](
-        m, n, alpha,
-        d_x, incx,
-        d_y, incy,
-        d_A, lda,
-        grid_dim=ceildiv(total, TBsize),
-        block_dim=TBsize,
-    )
+    if dtype == DType.float32:
+        ctx.enqueue_function[sger_device[TBsize], sger_device[TBsize]](
+            m, n, alpha,
+            d_x, incx,
+            d_y, incy,
+            d_A, lda,
+            grid_dim=ceildiv(total, TBsize),
+            block_dim=TBsize,
+        )
+    elif dtype == DType.float64:
+        ctx.enqueue_function[dger_device[TBsize], dger_device[TBsize]](
+            m, n, alpha,
+            d_x, incx,
+            d_y, incy,
+            d_A, lda,
+            grid_dim=ceildiv(total, TBsize),
+            block_dim=TBsize,
+        )
+    else:
+        return
 
     ctx.synchronize()
