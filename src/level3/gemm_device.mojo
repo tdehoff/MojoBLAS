@@ -1,12 +1,12 @@
 from gpu import thread_idx, block_idx, block_dim, grid_dim
 from gpu.host import DeviceContext
 from math import ceildiv
+from memory import memset_zero
 
 comptime TBsize = 512
 comptime TBx = 32
 comptime TBy = 16
-fn sgemm_device(
-    trans_a: Int, trans_b: Int,
+fn sgemm_device[trans_a: Flag, trans_b: Flag, ak : ScalarKind, bk : ScalarKind](
     m: Int,
     n: Int,
     k: Int,
@@ -27,23 +27,48 @@ fn sgemm_device(
     for i in range(global_row, m, n_threads_row) :
         for j in range(global_col, n, n_threads_col) :
             var sum = Scalar[DType.float32](0)
-            if trans_a and trans_b :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[j * ldb + kk]
-            elif trans_a :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[kk * ldb + j]
-            elif trans_b :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[j * ldb + kk]
+            @parameter
+            if ak == ScalarKind.zero :
+                @parameter 
+                if bk == ScalarKind.zero :
+                    C[i * ldc + j] = Scalar[DType.float32](0)
+                elif bk == ScalarKind.gen :
+                    C[i * ldc + j] = beta * C[i * ldc + j]
             else :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[kk * ldb + j]
-            C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+                @parameter
+                if trans_a == Flag.true and trans_b == Flag.true :
+                    for kk in range(k) :
+                        sum += A[kk * lda + i] * B[j * ldb + kk]
+                elif trans_a == Flag.true:
+                    for kk in range(k) :
+                        sum += A[kk * lda + i] * B[kk * ldb + j]
+                elif trans_b == Flag.true:
+                    for kk in range(k) :
+                        sum += A[i * lda + kk] * B[j * ldb + kk]
+                else :
+                    for kk in range(k) :
+                        sum += A[i * lda + kk] * B[kk * ldb + j]
+                @parameter
+                if ak == ScalarKind.one :
+                    @parameter
+                    if bk == ScalarKind.zero :
+                        C[i * ldc + j] = sum
+                    elif bk == ScalarKind.one :
+                        C[i * ldc + j] = sum + C[i * ldc + j]
+                    else :
+                        C[i * ldc + j] = sum + beta * C[i * ldc + j]
+                else:
+                    @parameter
+                    if bk == ScalarKind.zero : 
+                        C[i * ldc + j] = alpha * sum
+                    elif bk == ScalarKind.one :
+                        C[i * ldc + j] = alpha * sum + C[i * ldc + j]
+                    else :
+                        C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+            
 
 
-fn dgemm_device(
-    trans_a: Int, trans_b: Int,
+fn dgemm_device[trans_a: Flag, trans_b: Flag, ak: ScalarKind, bk: ScalarKind](
     m: Int,
     n: Int,
     k: Int,
@@ -64,19 +89,110 @@ fn dgemm_device(
     for i in range(global_row, m, n_threads_row) :
         for j in range(global_col, n, n_threads_col) :
             var sum = Scalar[DType.float64](0)
-            if trans_a and trans_b :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[j * ldb + kk]
-            elif trans_a :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[kk * ldb + j]
-            elif trans_b :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[j * ldb + kk]
+            @parameter
+            if ak == ScalarKind.zero :
+                @parameter 
+                if bk == ScalarKind.zero :
+                    C[i * ldc + j] = Scalar[DType.float64](0)
+                elif bk == ScalarKind.gen :
+                    C[i * ldc + j] = beta * C[i * ldc + j]
             else :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[kk * ldb + j]
-            C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+                @parameter
+                if trans_a == Flag.true and trans_b == Flag.true :
+                    for kk in range(k) :
+                        sum += A[kk * lda + i] * B[j * ldb + kk]
+                elif trans_a == Flag.true:
+                    for kk in range(k) :
+                        sum += A[kk * lda + i] * B[kk * ldb + j]
+                elif trans_b == Flag.true:
+                    for kk in range(k) :
+                        sum += A[i * lda + kk] * B[j * ldb + kk]
+                else :
+                    for kk in range(k) :
+                        sum += A[i * lda + kk] * B[kk * ldb + j]
+                @parameter
+                if ak == ScalarKind.one :
+                    @parameter
+                    if bk == ScalarKind.zero :
+                        C[i * ldc + j] = sum
+                    elif bk == ScalarKind.one :
+                        C[i * ldc + j] = sum + C[i * ldc + j]
+                    else :
+                        C[i * ldc + j] = sum + beta * C[i * ldc + j]
+                else:
+                    @parameter
+                    if bk == ScalarKind.zero : 
+                        C[i * ldc + j] = alpha * sum
+                    elif bk == ScalarKind.one :
+                        C[i * ldc + j] = alpha * sum + C[i * ldc + j]
+                    else :
+                        C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+
+def launch_gemm[dtype: DType, ak: ScalarKind, bk: ScalarKind, ta: Flag, tb: Flag](    
+    m: Int,
+    n: Int,
+    k: Int,
+    alpha: Scalar[dtype],
+    d_A: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    lda: Int,
+    d_B: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    ldb: Int,
+    beta: Scalar[dtype],
+    d_C: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ldc: Int,
+    ctx: DeviceContext) :
+
+    @parameter
+    if dtype == DType.float32: 
+        ctx.enqueue_function[sgemm_device[ta, tb, ak, bk], sgemm_device[ta, tb, ak, bk]](
+        m, n, k,
+        alpha, 
+        d_A, lda,
+        d_B, ldb,
+        beta,
+        d_C, ldc,
+        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
+        block_dim=(TBx, TBy)
+        )
+    elif dtype == DType.float64 :
+        ctx.enqueue_function[dgemm_device[ta, tb, ak, bk], dgemm_device[ta, tb, ak, bk]](
+        m, n, k,
+        alpha, 
+        d_A, lda,
+        d_B, ldb,
+        beta,
+        d_C, ldc,
+        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
+        block_dim=(TBx, TBy)
+        )
+    else:
+        raise Error("blas_gemm: Unsupported type")
+
+
+def dispatch_transpose[dtype: DType, ak: ScalarKind, bk: ScalarKind](
+    trans_a: Bool, trans_b: Bool,    
+    m: Int,
+    n: Int,
+    k: Int,
+    alpha: Scalar[dtype],
+    d_A: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    lda: Int,
+    d_B: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    ldb: Int,
+    beta: Scalar[dtype],
+    d_C: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ldc: Int,
+    ctx: DeviceContext) :
+
+    if trans_a and trans_b :
+        launch_gemm[dtype, ak, bk, Flag.true, Flag.true](m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif trans_a :
+        launch_gemm[dtype, ak, bk,Flag.true, Flag.false](m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif trans_b :
+        launch_gemm[dtype, ak, bk,Flag.false, Flag.true](m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    else :
+        launch_gemm[dtype, ak, bk, Flag.false, Flag.false](m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+
 
 
 fn blas_gemm[dtype: DType](
@@ -106,17 +222,13 @@ fn blas_gemm[dtype: DType](
     blas_error_if["blas_gemm" , "m < 0"](m < 0)
     blas_error_if["blas_gemm" , "n < 0"](n < 0)
     blas_error_if["blas_gemm" , "k < 0"](k < 0)
-    var trans_a_i = 0
-    var trans_b_i = 0
 
     if trans_a :
         blas_error_if["blas_gemm" , "lda < m"](lda < m)
-        trans_a_i = 1
     else :
         blas_error_if["blas_gemm" , "lda < k"](lda < k)
     if trans_b : 
         blas_error_if["blas_gemm" , "ldb < k"](ldb < k)
-        trans_b_i = 1
     else :
         blas_error_if["blas_gemm" , "ldb < n"](ldb < n)
 
@@ -126,31 +238,42 @@ fn blas_gemm[dtype: DType](
     #quick return
     if m == 0 or n == 0 or k == 0 : return
 
-    @parameter
-    if dtype == DType.float32:
-        ctx.enqueue_function[sgemm_device, sgemm_device](
-        trans_a_i, trans_b_i,
-        m, n, k,
-        alpha, 
-        d_A, lda,
-        d_B, ldb,
-        beta,
-        d_C, ldc,
-        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
-        block_dim=(TBx, TBy))
-    elif dtype == DType.float64:
-        ctx.enqueue_function[dgemm_device, dgemm_device](
-        trans_a_i, trans_b_i,
-        m, n, k,
-        alpha, 
-        d_A, lda,
-        d_B, ldb,
-        beta,
-        d_C, ldc,
-        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
-        block_dim=(TBx, TBy)
-        )
-    else:
-        raise Error("blas_gemm: Unsupported type")
+    var zero = Scalar[dtype](0)
+    var one = Scalar[dtype](1)
+
+    if alpha == zero and beta == zero : # C gets filled with zeros, but cant memset unsafe pointer to Device Buffer
+        dispatch_transpose[dtype, ScalarKind.zero, ScalarKind.zero](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif alpha == zero and beta == one: # no op
+        return
+    elif alpha == zero :
+        dispatch_transpose[dtype, ScalarKind.zero, ScalarKind.gen](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif alpha == one and beta == zero :
+        dispatch_transpose[dtype, ScalarKind.one, ScalarKind.zero](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif alpha == one and beta == one :
+        dispatch_transpose[dtype, ScalarKind.one, ScalarKind.one](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif alpha == one: 
+        dispatch_transpose[dtype, ScalarKind.one, ScalarKind.gen](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif beta == zero :
+        dispatch_transpose[dtype, ScalarKind.gen, ScalarKind.zero](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    elif beta == one :
+        dispatch_transpose[dtype, ScalarKind.gen, ScalarKind.one](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+    else :
+        dispatch_transpose[dtype, ScalarKind.gen, ScalarKind.gen](trans_a, trans_b, m, n, k,alpha, d_A, lda,d_B, ldb, beta, d_C, ldc, ctx)
+
+
+    # elif dtype == DType.float64:
+    #     ctx.enqueue_function[dgemm_device, dgemm_device](
+    #     trans_a_i, trans_b_i,
+    #     m, n, k,
+    #     alpha, 
+    #     d_A, lda,
+    #     d_B, ldb,
+    #     beta,
+    #     d_C, ldc,
+    #     grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
+    #     block_dim=(TBx, TBy)
+    #     )
+    # else:
+    #     raise Error("blas_gemm: Unsupported type")
 
     ctx.synchronize()
