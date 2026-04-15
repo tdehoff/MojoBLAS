@@ -278,3 +278,18 @@ fn dense_to_sym_band_cm[dtype: DType](
                     val = A_band[(j - i) + i * lda]
 
             A_dense[i * n + j] = val
+
+def arr_min_max_mean(
+    arr: List[Float32]
+) -> Tuple[Float32, Float32, Float32]:
+    var a_min: Float32 = max_finite[DType.float32]()
+    var a_max: Float32 = min_finite[DType.float32]()
+    var a_mean: Float32 = 0.0
+    for a in arr:
+        if a < a_min:
+            a_min = a
+        if a > a_max:
+            a_max = a
+        a_mean += a
+    a_mean /= arr.__len__()
+    return (a_min, a_max, a_mean)
