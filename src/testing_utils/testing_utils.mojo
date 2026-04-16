@@ -1,5 +1,6 @@
 from random import rand, seed
 from math import sqrt
+from utils.numerics import max_finite, min_finite
 
 from python import Python
 
@@ -278,6 +279,7 @@ fn dense_to_sym_band_cm[dtype: DType](
                     val = A_band[(j - i) + i * lda]
 
             A_dense[i * n + j] = val
+
 
 def arr_min_max_mean(
     arr: List[Float32]
