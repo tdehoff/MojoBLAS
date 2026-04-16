@@ -1,6 +1,7 @@
 from gpu import thread_idx, block_idx, block_dim, grid_dim
 from gpu.host import DeviceContext
 from math import ceildiv
+from memory import memset_zero, memcpy
 
 comptime TBsize = 512
 comptime TBx = 32
@@ -19,27 +20,49 @@ fn sgemm_device(
     C: UnsafePointer[Float32, MutAnyOrigin],
     ldc: Int,
 ) :
-    var global_row = block_dim.y * block_idx.y + thread_idx.y
-    var global_col = block_dim.x * block_idx.x + thread_idx.x
-    var n_threads_row = grid_dim.y * block_dim.y
-    var n_threads_col = grid_dim.x * block_dim.x
 
-    for i in range(global_row, m, n_threads_row) :
-        for j in range(global_col, n, n_threads_col) :
-            var sum = Scalar[DType.float32](0)
-            if trans_a and trans_b :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[j * ldb + kk]
-            elif trans_a :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[kk * ldb + j]
-            elif trans_b :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[j * ldb + kk]
-            else :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[kk * ldb + j]
-            C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
+
+    if row < m and col < n :
+        var sum = Scalar[DType.float32](0)
+        if trans_a and trans_b:
+            for i in range(k) :
+                sum += A[i * lda + row] * B[col * ldb + i]
+        elif trans_a :
+            for i in range(k) :
+                sum += A[i * lda + row] * B[i * ldb + col]
+        elif trans_b :
+            for i in range(k) :
+                sum += A[row * lda + i] * B[col * ldb + i]
+        else :
+            for i in range(k) :
+                sum += A[row * lda + i] * B[i * ldb + col]
+        
+        C[row * ldc + col] = alpha * sum + beta * C[row * ldc + col]
+        
+
+    # var global_row = block_dim.y * block_idx.y + thread_idx.y
+    # var global_col = block_dim.x * block_idx.x + thread_idx.x
+    # var n_threads_row = grid_dim.y * block_dim.y
+    # var n_threads_col = grid_dim.x * block_dim.x
+
+    # for i in range(global_row, m, n_threads_row) :
+    #     for j in range(global_col, n, n_threads_col) :
+    #         var sum = Scalar[DType.float32](0)
+    #         if trans_a and trans_b :
+    #             for kk in range(k) :
+    #                 sum += A[kk * lda + i] * B[j * ldb + kk]
+    #         elif trans_a :
+    #             for kk in range(k) :
+    #                 sum += A[kk * lda + i] * B[kk * ldb + j]
+    #         elif trans_b :
+    #             for kk in range(k) :
+    #                 sum += A[i * lda + kk] * B[j * ldb + kk]
+    #         else :
+    #             for kk in range(k) :
+    #                 sum += A[i * lda + kk] * B[kk * ldb + j]
+    #         C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
 
 
 fn dgemm_device(
@@ -56,27 +79,46 @@ fn dgemm_device(
     C: UnsafePointer[Float64, MutAnyOrigin],
     ldc: Int,
 ) :
-    var global_row = block_dim.y * block_idx.y + thread_idx.y
-    var global_col = block_dim.x * block_idx.x + thread_idx.x
-    var n_threads_row = grid_dim.y * block_dim.y
-    var n_threads_col = grid_dim.x * block_dim.x
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
 
-    for i in range(global_row, m, n_threads_row) :
-        for j in range(global_col, n, n_threads_col) :
-            var sum = Scalar[DType.float64](0)
-            if trans_a and trans_b :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[j * ldb + kk]
-            elif trans_a :
-                for kk in range(k) :
-                    sum += A[kk * lda + i] * B[kk * ldb + j]
-            elif trans_b :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[j * ldb + kk]
-            else :
-                for kk in range(k) :
-                    sum += A[i * lda + kk] * B[kk * ldb + j]
-            C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
+    if row < m and col < n :
+        var sum = Scalar[DType.float64](0)
+        if trans_a and trans_b:
+            for i in range(k) :
+                sum += A[i * lda + row] * B[col * ldb + i]
+        elif trans_a :
+            for i in range(k) :
+                sum += A[i * lda + row] * B[i * ldb + col]
+        elif trans_b :
+            for i in range(k) :
+                sum += A[row * lda + i] * B[col * ldb + i]
+        else :
+            for i in range(k) :
+                sum += A[row * lda + i] * B[i * ldb + col]
+        
+        C[row * ldc + col] = alpha * sum + beta * C[row * ldc + col]
+    # var global_row = block_dim.y * block_idx.y + thread_idx.y
+    # var global_col = block_dim.x * block_idx.x + thread_idx.x
+    # var n_threads_row = grid_dim.y * block_dim.y
+    # var n_threads_col = grid_dim.x * block_dim.x
+
+    # for i in range(global_row, m, n_threads_row) :
+    #     for j in range(global_col, n, n_threads_col) :
+    #         var sum = Scalar[DType.float64](0)
+    #         if trans_a and trans_b :
+    #             for kk in range(k) :
+    #                 sum += A[kk * lda + i] * B[j * ldb + kk]
+    #         elif trans_a :
+    #             for kk in range(k) :
+    #                 sum += A[kk * lda + i] * B[kk * ldb + j]
+    #         elif trans_b :
+    #             for kk in range(k) :
+    #                 sum += A[i * lda + kk] * B[j * ldb + kk]
+    #         else :
+    #             for kk in range(k) :
+    #                 sum += A[i * lda + kk] * B[kk * ldb + j]
+    #         C[i * ldc + j] = alpha * sum + beta * C[i * ldc + j]
 
 
 fn blas_gemm[dtype: DType](
@@ -122,35 +164,42 @@ fn blas_gemm[dtype: DType](
 
     blas_error_if["blas_gemm" , "ldc < n"](ldc < n)
 
-    comptime c_read = (0, 1)
     #quick return
+    comptime zero = Scalar[dtype](0)
+    comptime one = Scalar[dtype](1)
     if m == 0 or n == 0 or k == 0 : return
-    if alpha == Scalar[dtype](0) and beta == Scalar[dtype](1) : return
-    
+    if alpha == zero and beta == one : return
+
 
     @parameter
     if dtype == DType.float32:
-        ctx.enqueue_function[sgemm_device, sgemm_device](
-        trans_a_i, trans_b_i,
-        m, n, k,
-        alpha, 
-        d_A, lda,
-        d_B, ldb,
-        beta,
-        d_C, ldc,
-        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
-        block_dim=(TBx, TBy))
+        if alpha == zero and beta == zero :
+            ctx.enqueue_function[szero_kernel, szero_kernel](d_C, m*n, grid_dim=ceildiv(m*n, TBsize), block_dim=TBsize)
+        else :
+            ctx.enqueue_function[sgemm_device, sgemm_device](
+            trans_a_i, trans_b_i,
+            m, n, k,
+            alpha, 
+            d_A, lda,
+            d_B, ldb,
+            beta,
+            d_C, ldc,
+            grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
+            block_dim=(TBx, TBy))
     elif dtype == DType.float64:
-        ctx.enqueue_function[dgemm_device, dgemm_device](
-        trans_a_i, trans_b_i,
-        m, n, k,
-        alpha, 
-        d_A, lda,
-        d_B, ldb,
-        beta,
-        d_C, ldc,
-        grid_dim=(ceildiv(n, TBx), ceildiv(m, TBy)),
-        block_dim=(TBx, TBy)
+        if alpha == zero and beta == zero :
+            ctx.enqueue_function[dzero_kernel, dzero_kernel](d_C, m*n, grid_dim=ceildiv(m*n, TBsize), block_dim=TBsize)
+        else :
+            ctx.enqueue_function[dgemm_device, dgemm_device](
+            trans_a_i, trans_b_i,
+            m, n, k,
+            alpha, 
+            d_A, lda,
+            d_B, ldb,
+            beta,
+            d_C, ldc,
+            grid_dim=(ceildiv(m, TBx), ceildiv(n, TBy)),
+            block_dim=(TBx, TBy)
         )
     else:
         raise Error("blas_gemm: Unsupported type")
