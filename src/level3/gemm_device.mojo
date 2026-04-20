@@ -239,11 +239,6 @@ fn blas_gemm[dtype: DType](
     comptime zero = Scalar[dtype](0)
     comptime one = Scalar[dtype](1)
     comptime scal_kernel = scal_device.scal_device[dtype]
-    #TODO :
-    # Write gemm specifc scale kernel? 
-    # Calculate/ pick grid/ block dims,
-    # maybe create intermediate results matrix D
-    # MMA? SIMD?
 
     if alpha == zero or k == 0 : # No Matrix multiplication, use scale kernel
         if beta == one :
