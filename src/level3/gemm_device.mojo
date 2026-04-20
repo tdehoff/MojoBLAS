@@ -3,13 +3,9 @@ from gpu.host import DeviceContext
 from math import ceildiv
 from memory import stack_allocation, memset_zero
 
-comptime TBsize = 512
-comptime Blocksize = 16
+comptime TBsize = 1024
+comptime Blocksize = 32
 
-comptime BM = 64
-comptime BN = 64
-comptime BK = 8
-comptime TM = 8
 fn sgemm_device[trans_a: Int, trans_b: Int](
     m: Int,
     n: Int,
@@ -236,17 +232,22 @@ fn blas_gemm[dtype: DType](
     blas_error_if["blas_gemm" , "ldc < n"](ldc < n)
 
     # quick returns
-    if m == 0 or n == 0 or k == 0 : return
+    if m == 0 or n == 0: return
+
+ 
 
     comptime zero = Scalar[dtype](0)
     comptime one = Scalar[dtype](1)
     comptime scal_kernel = scal_device.scal_device[dtype]
-    comptime zero_kernel = zero_device[dtype]
-    if alpha == zero : # No Matrix multiplication, use scale or zero-kernel
+    #TODO :
+    # Write gemm specifc scale kernel? 
+    # Calculate/ pick grid/ block dims,
+    # maybe create intermediate results matrix D
+    # MMA? SIMD?
+
+    if alpha == zero or k == 0 : # No Matrix multiplication, use scale kernel
         if beta == one :
             return
-        elif beta == zero :
-            ctx.enqueue_function[zero_kernel, zero_kernel](m*n, d_C, grid_dim=ceildiv(m*n, TBsize), block_dim=TBsize)
         else :
             ctx.enqueue_function[scal_kernel, scal_kernel](m*n, beta, d_C, 1, grid_dim=ceildiv(m*n, TBsize), block_dim=TBsize)
         ctx.synchronize()
