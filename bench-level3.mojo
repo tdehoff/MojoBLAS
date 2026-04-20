@@ -93,11 +93,11 @@ def parse_args(mut params: RunParams) -> Bool:
         parse_dim(params.dim_str, params.sizes)
     else:
         # Defaults:
-        params.sizes.append(256)
-        params.sizes.append(512)
-        params.sizes.append(1024)
-        params.sizes.append(2048)
-        params.sizes.append(4096)
+        params.sizes.append(1 << 7)   # 128
+        params.sizes.append(1 << 9)   # 512
+        params.sizes.append(1 << 11)  # 2048
+        params.sizes.append(1 << 13)  # 8192
+        params.sizes.append(1 << 14)  # 16384
 
     if len(params.routines) == 0: # TODO: Add other level 3 routines as they are implemented
         params.routines = ["gemm"]
@@ -133,13 +133,13 @@ def bench_gemm[dtype: DType](n: Int, iters: Int, ctx: DeviceContext) :
         end = monotonic()
         timings[i] = Float32(end - start)
 
-    var min, max, mean = arr_min_max_mean(timings)
+    var min_max_mean = arr_min_max_mean(timings)
     #bandwidth: read A (n * n) + read B (n * n) + read C (n * n) + write C (n * n)
-    var bw_gbs = Float32(4 * n * n * bytes_per_elem(dtype)) / mean
+    var bw_gbs = Float32(4 * n * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("gemm," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-        "," + String(min * 1e-9) + "," + String(max * 1e-9) +
-        "," + String(mean * 1e-9) + "," + String(bw_gbs))
+        "," + String(min_max_mean[0] * 1e-6) +
+        "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 
 def run_dtype[
@@ -166,7 +166,7 @@ def main():
     if not parse_args(params):
         return
 
-    print("op,device,dtype,n,iters,avg_ns,bandwidth_GBs")
+    print("op,device,dtype,n,iters,best_ms,avg_ms,best_bandwidth_GBs")
 
     with DeviceContext() as ctx:
         for routine in(params.routines):
