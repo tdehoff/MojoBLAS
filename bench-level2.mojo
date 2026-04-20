@@ -94,11 +94,11 @@ def parse_args(mut params: RunParams) -> Bool:
         parse_dim(params.dim_str, params.sizes)
     else:
         # Defaults: matrix dimension n (matrix has n*n elements)
-        params.sizes.append(1 << 5)   # 32
         params.sizes.append(1 << 7)   # 128
         params.sizes.append(1 << 9)   # 512
         params.sizes.append(1 << 11)  # 2048
         params.sizes.append(1 << 13)  # 8192
+        params.sizes.append(1 << 14)  # 16384
 
     if len(params.routines) == 0:
         params.routines = ["gemv", "gbmv", "ger", "sbmv", "symv",
