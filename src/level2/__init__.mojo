@@ -9,3 +9,4 @@ from .tbmv_device import *
 from .tbsv_device import *
 from .symv_device import *
 from .spr_device import *
+from .tpmv_device import *

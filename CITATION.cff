@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "MojoBLAS"
+abstract: "A GPU-accelerated BLAS library written in Mojo, providing Level 1, 2, and 3 routines with multi-precision floating-point support for NVIDIA and AMD GPUs."
+authors:
+  - given-names: Tatiana
+    family-names: Melnichenko
+    affiliation: "University of Tennessee, Knoxville"
+  - given-names: Alexa
+    family-names: Andershock
+    affiliation: "University of Tennessee, Knoxville"
+  - given-names: Gian
+    family-names: Fernandez-Aleman
+    affiliation: "University of Tennessee, Knoxville"
+  - given-names: Jackson
+    family-names: Mowry
+    affiliation: "University of Tennessee, Knoxville"
+  - given-names: Holden
+    family-names: Roaten
+    affiliation: "University of Tennessee, Knoxville"
+  - given-names: Jonah
+    family-names: Weston
+    affiliation: "University of Tennessee, Knoxville"
+repository-code: "https://github.com/tdehoff/MojoBLAS"
+url: "https://github.com/tdehoff/MojoBLAS"
+license: BSD-3-Clause
+date-released: "2025-09-25"
+keywords:
+  - BLAS
+  - Mojo
+  - GPU
+  - linear algebra
+  - high performance computing

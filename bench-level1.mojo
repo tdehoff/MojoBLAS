@@ -97,11 +97,11 @@ def parse_args(mut params: RunParams) -> Bool:
         parse_dim(params.dim_str, params.sizes)
     else:
         # Defaults:
-        params.sizes.append(1024)
-        params.sizes.append(8192)
-        params.sizes.append(1048576)
-        params.sizes.append(8388608)
-        params.sizes.append(16777216)
+        params.sizes.append(1 << 10)  # 2^10
+        params.sizes.append(1 << 14)  # 2^14
+        params.sizes.append(1 << 18)  # 2^18
+        params.sizes.append(1 << 22)  # 2^22
+        params.sizes.append(1 << 26)  # 2^26
 
     if len(params.routines) == 0:
         params.routines = ["asum", "axpy", "copy", "dot", "dotc",
@@ -132,11 +132,11 @@ def bench_asum[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: n reads
-    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("asum," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_axpy[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -165,11 +165,11 @@ def bench_axpy[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: 2n reads + n writes = 3n
-    var bw_gbs = Float32(3 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(3 * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("axpy," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 
 def bench_copy[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
@@ -197,10 +197,10 @@ def bench_copy[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: n reads + n writes = 2n
-    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[0]
     print("copy," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_dot[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -228,10 +228,10 @@ def bench_dot[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: 2n reads
-    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[0]
     print("dot," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_dotc[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](2 * n)
@@ -259,10 +259,10 @@ def bench_dotc[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: 2 vectors * 2n floats = 4n reads
-    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[0]
     print("dotc," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_dotu[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](2 * n)
@@ -290,11 +290,11 @@ def bench_dotu[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: 2 vectors * 2n floats = 4n reads
-    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("dotu," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 
 def bench_iamax[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
@@ -319,11 +319,11 @@ def bench_iamax[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: n reads
-    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("iamax," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_nrm2[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -347,11 +347,11 @@ def bench_nrm2[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: n reads
-    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("nrm2," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_rot[dtype: DType](n: Int, iters: Int, ctx: DeviceContext) where dtype.is_floating_point():
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -380,12 +380,12 @@ def bench_rot[dtype: DType](n: Int, iters: Int, ctx: DeviceContext) where dtype.
 
     var min_max_mean = arr_min_max_mean(timings)
 
-    # bandwidth: 2n reads + 2n writes = 4n
-    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    # bandwidth: 2n reads
+    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("rot," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_rotg[dtype: DType](iters: Int, ctx: DeviceContext):
     var a = generate_random_scalar[dtype](-100, 100)
@@ -408,8 +408,8 @@ def bench_rotg[dtype: DType](iters: Int, ctx: DeviceContext):
     var bw_gbs: Float32 = 0.0
 
     print("rotg,cpu," + String(dtype) + ",0," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_rotm[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -449,12 +449,12 @@ def bench_rotm[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
 
     var min_max_mean = arr_min_max_mean(timings)
 
-    # bandwidth: 2n reads + 2n writes = 4n
-    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    # bandwidth: 2n reads
+    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("rotm," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 
 def bench_rotmg[dtype: DType](iters: Int, ctx: DeviceContext):
@@ -479,8 +479,8 @@ def bench_rotmg[dtype: DType](iters: Int, ctx: DeviceContext):
     var bw_gbs: Float32 = 0.0
 
     print("rotmg,cpu," + String(dtype) + ",0," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 
 def bench_scal[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
@@ -506,11 +506,11 @@ def bench_scal[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: n reads + n writes = 2n
-    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(2 * n * bytes_per_elem(dtype)) / min_max_mean[0]
 
     print("scal," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def bench_swap[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -537,10 +537,10 @@ def bench_swap[dtype: DType](n: Int, iters: Int, ctx: DeviceContext):
     var min_max_mean = arr_min_max_mean(timings)
 
     # bandwidth: 2n reads + 2n writes = 4n
-    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[2]
+    var bw_gbs = Float32(4 * n * bytes_per_elem(dtype)) / min_max_mean[0]
     print("swap," + ctx.name() + "," + String(dtype) + "," + String(n) + "," + String(iters) +
-          "," + String(min_max_mean[0] * 1e-9) + "," + String(min_max_mean[1] * 1e-9) +
-          "," + String(min_max_mean[2] * 1e-9) + "," + String(bw_gbs))
+          "," + String(min_max_mean[0] * 1e-6) +
+          "," + String(min_max_mean[2] * 1e-6) + "," + String(bw_gbs))
 
 def run_dtype[
     dtype: DType
@@ -584,7 +584,7 @@ def main():
     if not parse_args(params):
         return
 
-    print("op,device,dtype,n,iters,min_s,max_s,mean_s,mean_bandwidth_GBs")
+    print("op,device,dtype,n,iters,best_ms,avg_ms,best_bandwidth_GBs")
 
     with DeviceContext() as ctx:
         for routine in(params.routines):

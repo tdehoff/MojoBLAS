@@ -1,5 +1,5 @@
 from sys import argv
-from testing import assert_equal, assert_almost_equal, TestSuite
+from testing import assert_equal, assert_almost_equal, assert_true, TestSuite
 from gpu.host import DeviceContext
 from math import sqrt
 from complex import *
@@ -149,7 +149,6 @@ def dot_test[
     size:  Int
 ]():
     with DeviceContext() as ctx:
-        # print("[ dot test", dtype, "]")
         out = ctx.enqueue_create_buffer[dtype](1)
         out.enqueue_fill(0)
         a_device = ctx.enqueue_create_buffer[dtype](size)
@@ -197,11 +196,17 @@ def dot_test[
             return
 
         sp_res_mojo = Scalar[dtype](py=sp_res)
+        var norm_a = frobenius_norm[dtype](a.unsafe_ptr(), size)
+        var norm_b = frobenius_norm[dtype](b.unsafe_ptr(), size)
         with out.map_to_host() as res_mojo:
-            # print("out:", res_mojo[0])
-            # print("expected:", sp_res)
-            # may want to use assert_almost_equal with tolerance specified
-            assert_almost_equal(res_mojo[0], sp_res_mojo, atol=atol)
+            var error = abs(res_mojo[0] - sp_res_mojo)
+            var ok = check_gemm_error[dtype](
+                1, 1, size,
+                Scalar[dtype](1), Scalar[dtype](0),
+                norm_a, norm_b, Scalar[dtype](0),
+                error,
+            )
+            assert_true(ok)
 
 
 def dot_test_complex[
@@ -257,11 +262,17 @@ def dot_test_complex[
             return
 
         sp_res_mojo = Scalar[dtype](py=sp_res)
+        var norm_a = frobenius_norm[dtype](a.unsafe_ptr(), size)
+        var norm_b = frobenius_norm[dtype](b.unsafe_ptr(), size)
         with out.map_to_host() as res_mojo:
-            # print("out:", res_mojo[0])
-            # print("expected:", sp_res)
-            # may want to use assert_almost_equal with tolerance specified
-            assert_almost_equal(res_mojo[0], sp_res_mojo, atol=atol)
+            var error = abs(res_mojo[0] - sp_res_mojo)
+            var ok = check_gemm_error[dtype](
+                1, 1, size,
+                Scalar[dtype](1), Scalar[dtype](0),
+                norm_a, norm_b, Scalar[dtype](0),
+                error,
+            )
+            assert_true(ok)
 
 
 def dotc_test[
@@ -483,9 +494,6 @@ def nrm2_test[
         # Move Mojo result from CPU to GPU and compare to SciPy
         sp_res_mojo = Scalar[dtype](py=sp_res)
         with d_res.map_to_host() as res_mojo:
-            res_mojo[0] = sqrt(res_mojo[0])
-            # print("out:", res_mojo[0])
-            # print("expected:", sp_res)
             assert_almost_equal(res_mojo[0], sp_res_mojo)
 
 

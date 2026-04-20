@@ -263,11 +263,11 @@ def spr_test[
         if dtype == DType.float32:
             np_AP = np.array(py_AP, dtype=np.float32)
             np_x = np.array(py_x, dtype=np.float32)
-            sp_res = sp_blas.sspr(alpha, np_x, lower=uplo, ap=np_AP, overwrite_ap=False)
+            sp_res = sp_blas.sspr(n, alpha, np_x, lower=uplo, ap=np_AP, overwrite_ap=False)
         elif dtype == DType.float64:
             np_AP = np.array(py_AP, dtype=np.float64)
             np_x = np.array(py_x, dtype=np.float64)
-            sp_res = sp_blas.dspr(alpha, np_x, lower=uplo, ap=np_AP, overwrite_ap=False)
+            sp_res = sp_blas.dspr(n, alpha, np_x, lower=uplo, ap=np_AP, overwrite_ap=False)
         else:
             print("Unsupported type: ", dtype)
             return
@@ -971,12 +971,13 @@ def tbsv_test[
         for i in range(n):
             py_b.append(b[i])
 
-        var sp_res: PythonObject
-
         var is_lower = 0 if uplo else 1
         var trans_mode = 1 if trans else 0
         var unit_diag = True if diag else False
 
+        var np_A: PythonObject
+        var np_b: PythonObject
+        var sp_res: PythonObject
         if dtype == DType.float32:
             np_A = np.array(py_A, dtype=np.float32).reshape(n, n)
             np_b = np.array(py_b, dtype=np.float32)
@@ -999,6 +1000,7 @@ def tbsv_test[
             print("Unsupported type: ", dtype)
             return
 
+        # Primary check: will pass for well-conditioned A
         with x_d.map_to_host() as res_mojo:
             var norm_diff = Scalar[dtype](0)
             for i in range(n):
@@ -1012,7 +1014,160 @@ def tbsv_test[
                 norm_A, norm_b, Scalar[dtype](0),
                 norm_diff
             )
+
+            # A is ill-conditioned, perform backward error-check.
+            # Compute x * A and check if it's close enough to b.
+            if not ok:
+                # Copy x into temp so we don't overwrite our solution
+                temp_d = ctx.enqueue_create_buffer[dtype](n)
+                ctx.enqueue_copy(temp_d, x_d)
+                ctx.synchronize()
+
+                # Compute temp = A * x with tbmv
+                work = ctx.enqueue_create_buffer[dtype](n)
+                blas_tbmv[dtype](
+                    uplo, trans, diag,
+                    n, k,
+                    A_d.unsafe_ptr(), lda,
+                    temp_d.unsafe_ptr(), 1,
+                    work.unsafe_ptr(),
+                    ctx
+                )
+
+                with temp_d.map_to_host() as ax:
+                    # Compute residual r = A*x - b, and norm of x for scaling
+                    var norm_r = Scalar[dtype](0)
+                    var norm_x = Scalar[dtype](0)
+                    for i in range(n):
+                        var r_i = ax[i] - b[i]
+                        norm_r += r_i * r_i
+                        norm_x += res_mojo[i] * res_mojo[i]
+                    norm_r = sqrt(norm_r)
+                    norm_x = sqrt(norm_x)
+
+                    # Check residual
+                    ok = check_gemm_error[dtype](
+                        1, n, n,
+                        Scalar[dtype](1), Scalar[dtype](0),
+                        norm_A, norm_x, Scalar[dtype](0),
+                        norm_r,
+                    )
+
             assert_true(ok)
+
+
+def tpmv_test[
+    dtype: DType,
+    n: Int,
+    trans: Bool,
+    uplo: Int,
+    diag: Int,
+]():
+    with DeviceContext() as ctx:
+        A_dense = ctx.enqueue_create_host_buffer[dtype](n * n)
+
+        AP_d = ctx.enqueue_create_buffer[dtype](n * n)
+        AP = ctx.enqueue_create_host_buffer[dtype](n * n)
+        x_d = ctx.enqueue_create_buffer[dtype](n)
+        x = ctx.enqueue_create_host_buffer[dtype](n)
+
+        generate_random_arr[dtype](n * n, A_dense.unsafe_ptr(), -1, 1)
+        generate_random_arr[dtype](n, x.unsafe_ptr(), -1, 1)
+
+        # Zero out off-triangle elements to make A strictly triangular
+        for i in range(n):
+            for j in range(n):
+                # upper triangular
+                if uplo == 0:
+                    if i > j:
+                        A_dense[i * n + j] = 0
+                # lower triangular
+                else:
+                    if i < j:
+                        A_dense[i * n + j] = 0
+
+        # Handle diagonal based on diag parameter
+        for i in range(n):
+            # unit diagonal
+            if diag == 1:
+                A_dense[i * n + i] = 1
+            # non-unit diagonal: make diagonally dominant to reduce numerical instability
+            else:
+                A_dense[i * n + i] += 1000
+
+        # Pack into column-major packed storage
+        dense_to_tri_packed(A_dense.unsafe_ptr(), AP.unsafe_ptr(), n, uplo)
+
+        ctx.enqueue_copy(AP_d, AP)
+        ctx.enqueue_copy(x_d, x)
+        ctx.synchronize()
+
+        # Compute norms for error checks
+        var norm_A = frobenius_norm[dtype](A_dense.unsafe_ptr(), n * n)
+        var norm_x = frobenius_norm[dtype](x.unsafe_ptr(), n)
+
+        blas_tpmv[dtype](
+            uplo,
+            trans,
+            diag,
+            n,
+            AP_d.unsafe_ptr(),
+            x_d.unsafe_ptr(), 1,
+            ctx,
+        )
+
+        # Import SciPy and numpy
+        sp = Python.import_module("scipy")
+        np = Python.import_module("numpy")
+        sp_blas = sp.linalg.blas
+
+        py_A = Python.list()
+        py_x = Python.list()
+        for i in range(n * n):
+            py_A.append(AP[i])
+        for i in range(n):
+            py_x.append(x[i])
+
+        var sp_res: PythonObject
+
+        if dtype == DType.float32:
+            np_A = np.array(py_A, dtype=np.float32)
+            np_x = np.array(py_x, dtype=np.float32)
+            sp_res = sp_blas.stpmv(n, np_A, np_x,
+                lower=0 if uplo else 1,
+                trans=1 if trans else 0,
+                diag=1 if diag else 0
+            )
+        elif dtype == DType.float64:
+            np_A = np.array(py_A, dtype=np.float64)
+            np_x = np.array(py_x, dtype=np.float64)
+            sp_res = sp_blas.dtpmv(n, np_A, np_x,
+                lower=0 if uplo else 1,
+                trans=1 if trans else 0,
+                diag=1 if diag else 0
+            )
+        else:
+            print("Unsupported type: ", dtype)
+            return
+
+        with x_d.map_to_host() as res_mojo:
+
+            var norm_diff = Scalar[dtype](0)
+            for i in range(n):
+                var diff = res_mojo[i] - Scalar[dtype](py=sp_res[i])
+                print(res_mojo[i], Scalar[dtype](py=sp_res[i]))
+                norm_diff += diff * diff
+            norm_diff = sqrt(norm_diff)
+            print(norm_diff)
+
+            var ok = check_gemm_error[dtype](
+                1, n, n,
+                Scalar[dtype](1), Scalar[dtype](0),
+                norm_A, norm_x, Scalar[dtype](0),
+                norm_diff
+            )
+            assert_true(ok)
+
 
 def test_gemv():
     gemv_test[DType.float32,  64,  64, False]()
@@ -1158,6 +1313,24 @@ def test_tbsv():
     tbsv_test[DType.float64, 512, 16, 1, True,  0]()
     tbsv_test[DType.float64, 512, 16, 0, True,  0]()
 
+def test_tpmv():
+    tpmv_test[DType.float32,  64,  True,  0, 0]()
+    tpmv_test[DType.float32,  64,  True,  1, 0]()
+    tpmv_test[DType.float32,  64,  True,  0, 1]()
+    tpmv_test[DType.float32,  64,  True,  1, 1]()
+    tpmv_test[DType.float32,  64,  False, 0, 0]()
+    tpmv_test[DType.float32,  64,  False, 1, 0]()
+    tpmv_test[DType.float32,  64,  False, 0, 1]()
+    tpmv_test[DType.float32,  64,  False, 1, 1]()
+    tpmv_test[DType.float64,  64,  True,  0, 0]()
+    tpmv_test[DType.float64,  64,  True,  1, 0]()
+    tpmv_test[DType.float64,  64,  True,  0, 1]()
+    tpmv_test[DType.float64,  64,  True,  1, 1]()
+    tpmv_test[DType.float64,  64,  False, 0, 0]()
+    tpmv_test[DType.float64,  64,  False, 1, 0]()
+    tpmv_test[DType.float64,  64,  False, 0, 1]()
+    tpmv_test[DType.float64,  64,  False, 1, 1]()
+
 def main():
     print("--- MojoBLAS Level 2 routines testing ---")
     var args = argv()
@@ -1177,6 +1350,7 @@ def main():
         elif args[i] == "trsv":  suite.test[test_trsv]()
         elif args[i] == "tbmv":  suite.test[test_tbmv]()
         elif args[i] == "tbsv":  suite.test[test_tbsv]()
+        elif args[i] == "tpmv":  suite.test[test_tpmv]()
         elif args[i] == "symv":  suite.test[test_symv]()
         else: print("unknown routine:", args[i])
     suite^.run()
